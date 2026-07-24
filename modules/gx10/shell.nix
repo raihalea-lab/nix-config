@@ -12,6 +12,8 @@ let
   '';
 in
 {
-  programs.zsh.initContent = ghAppTokenInit;
+  # .zshenv に入れる: 非対話の `zsh -c`（Hermes の terminal ツールが使う形）でも
+  # 必ず source されるのはここだけ。.zshrc (initContent) は対話シェル専用なので不可
+  programs.zsh.envExtra = ghAppTokenInit;
   programs.bash.initExtra = ghAppTokenInit;
 }
