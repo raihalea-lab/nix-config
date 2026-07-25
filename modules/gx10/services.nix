@@ -65,6 +65,37 @@ in
     };
   };
 
+  # GitHub Actions の self-hosted runner。無料枠を使い切ったので手元で回す。
+  # イメージ定義は dgx-control の scripts/gh-runner.Dockerfile が正。
+  #
+  # コンテナ越しに動かすのは資源制限のためではなく隔離のため。ジョブはリポジトリ内の
+  # 任意コードを raiha 権限で実行するので、ベアメタルだと sudo で ghapp-token を叩いて
+  # GitHub App トークンを発行でき、~/.hermes と ~/.config/gh も読めてしまう。
+  # cpu/memory の上限は、同居する音声入力スタックと vLLM の取り分を守るためのもの。
+  systemd.user.services.gh-runner = {
+    Unit = {
+      Description = "GitHub Actions self-hosted runner (containerized)";
+      # config.sh 済みの機体でのみ起動する。cloudflared-tunnel と同じ作法。
+      ConditionPathExists = "%h/actions-runner/.credentials";
+      After = [ "network-online.target" ];
+    };
+    Service = {
+      # docker は apt 側を使う。デーモンが apt 管理なので CLI もそちらに揃える。
+      ExecStartPre = "-/usr/bin/docker rm -f gh-runner";
+      ExecStart = "/usr/bin/docker run --rm --name gh-runner --cpus=8 --memory=24g --memory-swap=24g -v %h/actions-runner:/home/runner/actions-runner gh-runner ./run.sh";
+      # 実行中のジョブを片付ける時間を与えてから落とす
+      ExecStop = "/usr/bin/docker stop -t 60 gh-runner";
+      TimeoutStopSec = 90;
+      # 再起動直後は dockerd がまだ上がっていないことがある。user unit から
+      # system unit の docker.service へ After= は張れないのでリトライで待つ。
+      Restart = "always";
+      RestartSec = 15;
+    };
+    Install = {
+      WantedBy = [ "default.target" ];
+    };
+  };
+
   systemd.user.timers.pr-review = {
     Unit = {
       Description = "Hourly PR review sweep";
