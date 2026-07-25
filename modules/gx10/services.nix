@@ -1,4 +1,4 @@
-{ ... }:
+{ pkgs, ... }:
 let
   # vLLM サービスの共通形。ConditionPathExists により、起動スクリプトが
   # 存在するマシンでのみ有効になる（gx10-1 / gx10-2 を同一 flake のまま分岐）
@@ -41,6 +41,27 @@ in
         # 長い diff でも次の発火までに必ず終わらせる
         TimeoutStartSec = "3300";
       };
+    };
+  };
+
+  systemd.user.services.cloudflared-tunnel = {
+    Unit = {
+      Description = "Cloudflare Tunnel";
+      # トークンを置いた機体でのみ起動する。秘密をこのリポジトリに入れずに
+      # 機体分岐できるので、vLLM サービスの ConditionPathExists と同じ作法になる。
+      ConditionPathExists = "%h/.config/cloudflared/env";
+      After = [ "network-online.target" ];
+    };
+    Service = {
+      # TUNNEL_TOKEN=... を 600 で置く（リポジトリには入れない）
+      EnvironmentFile = "%h/.config/cloudflared/env";
+      # 更新は nix 側で行うので自動更新は切る
+      ExecStart = "${pkgs.cloudflared}/bin/cloudflared --no-autoupdate tunnel run";
+      Restart = "on-failure";
+      RestartSec = 15;
+    };
+    Install = {
+      WantedBy = [ "default.target" ];
     };
   };
 
