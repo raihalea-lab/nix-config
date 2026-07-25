@@ -7,5 +7,6 @@
     tmux
     ripgrep
     ffmpeg
+    cloudflared  # Cloudflare Tunnel（systemd user service は services.nix）
   ];
 }
