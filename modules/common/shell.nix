@@ -72,9 +72,15 @@ in
     enableZshIntegration = true;
 
     settings = {
-      format = "$directory$git_branch$git_status$nix_shell$package$fill$cmd_duration$line_break$character";
+      format = "$hostname$directory$git_branch$git_status$nix_shell$package$fill$cmd_duration$line_break$character";
       right_format = "$time";
       add_newline = true;
+
+      # SSH接続時のみ表示（ssh_only はデフォルト true）
+      hostname = {
+        format = "[$hostname]($style) ";
+        style = "bold yellow";
+      };
 
       directory = {
         truncation_length = 3;
