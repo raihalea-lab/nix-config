@@ -96,6 +96,120 @@ in
     };
   };
 
+  # ---------------------------------------------------------------------------
+  # ステータスページ（status.raiha.dev / checks.raiha.dev、dgx-control 管理）
+  #
+  # Beszel = マシンメトリクス（CPU/メモリ/GPU/ディスク）、Gatus = サービス死活。
+  # hub と gatus は gx10-2 の loopback で待ち、cloudflared だけが唯一の入口
+  # （Access の aud_tag 検証付き）。agent は hub の SSH 公開鍵で署名検証するので
+  # tailnet に開いていても無認証では読めない。
+  # 起動スイッチは env ファイルの有無（cloudflared-tunnel と同じ作法）:
+  #   beszel-agent … 両機。LISTEN（gx10-1 は Tailscale IP、gx10-2 は loopback）と KEY
+  #   beszel-hub / gatus … gx10-2 のみ
+  # ---------------------------------------------------------------------------
+  systemd.user.services.beszel-agent = {
+    Unit = {
+      Description = "Beszel agent (system metrics)";
+      ConditionPathExists = "%h/.config/beszel/agent.env";
+      After = [ "network-online.target" ];
+    };
+    Service = {
+      # LISTEN=<ip:port> と KEY=<hub 公開鍵> を 600 で置く
+      EnvironmentFile = "%h/.config/beszel/agent.env";
+      # GPU メトリクスは /usr/bin/nvidia-smi を PATH から探すため明示する
+      Environment = "PATH=/usr/bin:/bin";
+      ExecStart = "${pkgs.beszel}/bin/beszel-agent";
+      Restart = "on-failure";
+      RestartSec = 15;
+    };
+    Install = {
+      WantedBy = [ "default.target" ];
+    };
+  };
+
+  systemd.user.services.beszel-hub = {
+    Unit = {
+      Description = "Beszel hub (status.raiha.dev)";
+      ConditionPathExists = "%h/.config/beszel/hub.env";
+      After = [ "network-online.target" ];
+    };
+    Service = {
+      EnvironmentFile = "%h/.config/beszel/hub.env";
+      ExecStart = "${pkgs.beszel}/bin/beszel-hub serve --http 127.0.0.1:8090 --dir %h/.local/share/beszel";
+      Restart = "on-failure";
+      RestartSec = 15;
+    };
+    Install = {
+      WantedBy = [ "default.target" ];
+    };
+  };
+
+  systemd.user.services.gatus = {
+    Unit = {
+      Description = "Gatus (checks.raiha.dev service health)";
+      ConditionPathExists = "%h/.config/gatus/env";
+      After = [ "network-online.target" ];
+    };
+    Service = {
+      # 中身は空でよい（機体スイッチ）。将来トークン等が要る時もここへ
+      EnvironmentFile = "%h/.config/gatus/env";
+      Environment = "GATUS_CONFIG_PATH=%h/.config/gatus/config.yaml";
+      ExecStart = "${pkgs.gatus}/bin/gatus";
+      Restart = "on-failure";
+      RestartSec = 15;
+    };
+    Install = {
+      WantedBy = [ "default.target" ];
+    };
+  };
+
+  # Gatus の監視定義。vLLM はキー無しで叩き 401 を「生存」とみなす
+  # （API キーを監視設定に置かないため）。localhost バインドのサービス
+  # （kotoba-asr / hermes 本体）は gx10-2 から届かないので、hermes は
+  # hooks.raiha.dev の外形監視で代替する。
+  xdg.configFile."gatus/config.yaml".text = ''
+    web:
+      address: 127.0.0.1
+      port: 8091
+
+    endpoints:
+      - name: vLLM Laguna S 2.1
+        group: gx10-2
+        url: "http://localhost:8000/v1/models"
+        interval: 60s
+        conditions:
+          - "[STATUS] == 401"
+
+      - name: Open WebUI
+        group: gx10-2
+        url: "http://localhost:3000"
+        interval: 60s
+        conditions:
+          - "[STATUS] == 200"
+
+      - name: vLLM Qwen3.6
+        group: gx10-1
+        url: "http://100.91.149.123:8080/v1/models"
+        interval: 60s
+        conditions:
+          - "[STATUS] == 401"
+
+      - name: voice-bridge
+        group: gx10-1
+        url: "http://100.91.149.123:18000"
+        interval: 60s
+        conditions:
+          - "[CONNECTED] == true"
+
+      # gx10-1 の Tunnel と hermes gateway の生存を外形で確認（404 でも生存）
+      - name: hooks.raiha.dev
+        group: external
+        url: "https://hooks.raiha.dev"
+        interval: 300s
+        conditions:
+          - "[STATUS] < 500"
+  '';
+
   systemd.user.timers.pr-review = {
     Unit = {
       Description = "Hourly PR review sweep";
