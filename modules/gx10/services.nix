@@ -201,12 +201,14 @@ in
         conditions:
           - "[CONNECTED] == true"
 
-      # gx10-1 の Tunnel と hermes gateway の生存を外形で確認（404 でも生存）
+      # gx10-1 の Tunnel と hermes gateway の生存を外形で確認（404 でも生存）。
+      # CONNECTED が無いと接続失敗（STATUS=0）が "< 500" を素通りして up 扱いになる
       - name: hooks.raiha.dev
         group: external
         url: "https://hooks.raiha.dev"
         interval: 300s
         conditions:
+          - "[CONNECTED] == true"
           - "[STATUS] < 500"
   '';
 
