@@ -288,6 +288,10 @@ in
         "-/usr/bin/docker rm -f agent-chat"
         "/usr/bin/mkdir -p %h/agent-workspace"
       ];
+      # ⚠️ opencode.json のマウント先は **HOME 配下**であること。
+      #    chat-entry.sh が HOME=/workspaces にするので /home/agent/.config では
+      #    読まれず、ローカルモデルが一覧に出ずに **OpenCode のクラウドモデルに
+      #    フォールバックする**（＝外部送信になる。実測で踏んだ）。
       # ⚠️ 資格情報は渡さない。GitHub トークンも vLLM の実キーも入れない
       #    （LLM は proxy 経由、PR 化は機械層経由）。
       # ⚠️ docker socket をマウントしないこと。マウントした時点で隔離は無効になる。
@@ -299,7 +303,7 @@ in
           -p 127.0.0.1:8790:8790 \
           -v %h/agent-workspace:/workspaces \
           -v %h/agent-runner/chat-entry.sh:/entry.sh:ro \
-          -v %h/agent-runner/opencode.json:/home/agent/.config/opencode/opencode.json:ro \
+          -v %h/agent-runner/opencode.json:/workspaces/.config/opencode/opencode.json:ro \
           agent-runner
       '';
       ExecStop = "/usr/bin/docker stop -t 20 agent-chat";
