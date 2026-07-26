@@ -72,22 +72,39 @@ in
   # 任意コードを raiha 権限で実行するので、ベアメタルだと sudo で ghapp-token を叩いて
   # GitHub App トークンを発行でき、~/.hermes と ~/.config/gh も読めてしまう。
   # cpu/memory の上限は、同居する音声入力スタックと vLLM の取り分を守るためのもの。
+  #
+  # ephemeral（org JIT）方式：ExecStartPre がジョブごとに使い捨ての JIT config を
+  # raihalea-lab org から発行（~/bin/gh-runner-jitconfig、dgx-control 管理）。
+  # ランナーは1ジョブ実行後に GitHub 側が自動 deregister → コンテナ終了 →
+  # Restart=always が次の発行・待機を回す。「常駐リスナーだが毎ジョブまっさら」になる。
+  #
+  # マウント設計（テスト環境のクリーンさと隔離の本体）:
+  #   /runner-src   … runner 本体を **ro**。コンテナ内へコピーして実行するので、
+  #                   ジョブからホスト側バイナリの改ざん・永続化ができない
+  #   /jitconfig    … 使い捨て設定を ro。登録用トークンはコンテナに渡さない
+  #   ~/.npm, ~/.cache … ダウンロードキャッシュのみ永続（node_modules は毎回組み直し）
+  #   _work はコンテナ内 = ジョブ終了で消滅
   systemd.user.services.gh-runner = {
     Unit = {
-      Description = "GitHub Actions self-hosted runner (containerized)";
-      # config.sh 済みの機体でのみ起動する。cloudflared-tunnel と同じ作法。
-      ConditionPathExists = "%h/actions-runner/.credentials";
+      Description = "GitHub Actions ephemeral runner (containerized, org JIT)";
+      # JIT 発行スクリプトを配置した機体でのみ起動する。cloudflared-tunnel と同じ作法。
+      ConditionPathExists = "%h/bin/gh-runner-jitconfig";
       After = [ "network-online.target" ];
     };
     Service = {
       # docker は apt 側を使う。デーモンが apt 管理なので CLI もそちらに揃える。
-      ExecStartPre = "-/usr/bin/docker rm -f gh-runner";
-      ExecStart = "/usr/bin/docker run --rm --name gh-runner --cpus=8 --memory=24g --memory-swap=24g -v %h/actions-runner:/home/runner/actions-runner gh-runner ./run.sh";
+      ExecStartPre = [
+        "-/usr/bin/docker rm -f gh-runner"
+        # キャッシュ置き場が無いと docker が root で作ってしまうので先に作る
+        "/usr/bin/mkdir -p %h/actions-runner-cache/npm %h/actions-runner-cache/cache"
+        # JIT config を発行（失敗時は RestartSec 後に再試行）
+        "%h/bin/gh-runner-jitconfig"
+      ];
+      ExecStart = "/usr/bin/docker run --rm --name gh-runner --cpus=8 --memory=24g --memory-swap=24g -v %h/actions-runner:/runner-src:ro -v %h/.config/gh-runner/jitconfig:/jitconfig:ro -v %h/actions-runner-cache/npm:/home/runner/.npm -v %h/actions-runner-cache/cache:/home/runner/.cache gh-runner /runner-src/run-jit.sh";
       # 実行中のジョブを片付ける時間を与えてから落とす
       ExecStop = "/usr/bin/docker stop -t 60 gh-runner";
       TimeoutStopSec = 90;
-      # 再起動直後は dockerd がまだ上がっていないことがある。user unit から
-      # system unit の docker.service へ After= は張れないのでリトライで待つ。
+      # ジョブ完了ごとの正常終了も、起動直後に dockerd が未起動のケースも Restart=always で回す
       Restart = "always";
       RestartSec = 15;
     };
