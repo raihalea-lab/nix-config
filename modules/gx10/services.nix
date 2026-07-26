@@ -237,7 +237,80 @@ in
         conditions:
           - "[CONNECTED] == true"
           - "[STATUS] < 500"
+
+      # コーディングエージェントのチャット UI（loopback なので外形は Tunnel 越し）
+      - name: code.raiha.dev
+        group: external
+        url: "https://code.raiha.dev"
+        interval: 300s
+        conditions:
+          - "[CONNECTED] == true"
+          - "[STATUS] < 500"
   '';
+
+  # ---------------------------------------------------------------------------
+  # コーディングエージェント（dgx-control の docs/coding-agent.md）
+  #
+  # 設計の芯は「エージェントに資格情報を持たせない」こと。
+  #   agent-proxy … vLLM の実キーを保持し、コンテナには使い捨てトークンだけ見せる。
+  #                 docker ブリッジ gateway で待つ（loopback だとコンテナから届かず、
+  #                 0.0.0.0 だと tailnet に開く。--network host は論外で、
+  #                 ホストの hermes gateway(8644) にコンテナが届いてしまう）
+  #   agent-chat  … OpenCode web（code.raiha.dev）。loopback に publish し、
+  #                 cloudflared + Access が唯一の入口
+  # push と PR 作成は機械層（~/bin/agent-implement.py）だけが行う。
+  # ---------------------------------------------------------------------------
+  systemd.user.services.agent-proxy = {
+    Unit = {
+      Description = "LLM proxy for the coding agent (holds the real API key)";
+      ConditionPathExists = "%h/bin/agent-proxy.py";
+      After = [ "network-online.target" ];
+    };
+    Service = {
+      ExecStart = "%h/bin/agent-proxy.py";
+      Restart = "on-failure";
+      RestartSec = 15;
+    };
+    Install = {
+      WantedBy = [ "default.target" ];
+    };
+  };
+
+  systemd.user.services.agent-chat = {
+    Unit = {
+      Description = "OpenCode web for the coding agent (code.raiha.dev)";
+      # チャット用エントリを配置した機体でのみ起動する
+      ConditionPathExists = "%h/agent-runner/chat-entry.sh";
+      After = [ "network-online.target" ];
+    };
+    Service = {
+      ExecStartPre = [
+        "-/usr/bin/docker rm -f agent-chat"
+        "/usr/bin/mkdir -p %h/agent-workspace"
+      ];
+      # ⚠️ 資格情報は渡さない。GitHub トークンも vLLM の実キーも入れない
+      #    （LLM は proxy 経由、PR 化は機械層経由）。
+      # ⚠️ docker socket をマウントしないこと。マウントした時点で隔離は無効になる。
+      ExecStart = ''
+        /usr/bin/docker run --rm --name agent-chat \
+          --cpus=4 --memory=8g --memory-swap=8g --pids-limit 512 \
+          --security-opt no-new-privileges --cap-drop ALL \
+          --env-file %h/.config/agent-proxy/run-token.env \
+          -p 127.0.0.1:8790:8790 \
+          -v %h/agent-workspace:/workspaces \
+          -v %h/agent-runner/chat-entry.sh:/entry.sh:ro \
+          -v %h/agent-runner/opencode.json:/home/agent/.config/opencode/opencode.json:ro \
+          agent-runner
+      '';
+      ExecStop = "/usr/bin/docker stop -t 20 agent-chat";
+      TimeoutStopSec = 40;
+      Restart = "always";
+      RestartSec = 15;
+    };
+    Install = {
+      WantedBy = [ "default.target" ];
+    };
+  };
 
   systemd.user.timers.pr-review = {
     Unit = {
