@@ -22,6 +22,8 @@ in
   systemd.user.services = {
     qwen-vllm = mkVllmService "vLLM Qwen3.6-35B (Hermes default model, port 8080)" "%h/bin/qwen-serve.sh";
     laguna-vllm = mkVllmService "vLLM Laguna S 2.1 (port 8000)" "%h/bin/laguna-serve.sh";
+    # llama.cpp だが起動の形は vLLM 勢と同一（スクリプト存在で機体判別、Restart 付き）
+    fable-llama = mkVllmService "llama.cpp Fable-Fusion 27B creative (port 8081)" "%h/bin/fable-serve.sh";
 
     # PR レビューパイプライン（機械層）のフォールバック巡回。
     # 主経路は GitHub webhook → gh-gatekeeper.py が当該 PR だけを即時発火する。
@@ -210,6 +212,14 @@ in
         interval: 60s
         conditions:
           - "[STATUS] == 401"
+
+      # llama.cpp の /health は API キー免除の公開エンドポイント
+      - name: Fable-Fusion (llama.cpp)
+        group: gx10-1
+        url: "http://100.91.149.123:8081/health"
+        interval: 60s
+        conditions:
+          - "[STATUS] == 200"
 
       - name: voice-bridge
         group: gx10-1
