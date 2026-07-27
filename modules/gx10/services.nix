@@ -286,7 +286,7 @@ in
     Service = {
       ExecStartPre = [
         "-/usr/bin/docker rm -f agent-chat"
-        "/usr/bin/mkdir -p %h/agent-workspace"
+        "/usr/bin/mkdir -p %h/agent-workspace %h/agent-state"
       ];
       # ⚠️ 資格情報は渡さない。GitHub トークンも vLLM の実キーも入れない
       #    （LLM は proxy 経由、PR 化は機械層経由）。
@@ -298,6 +298,7 @@ in
           --env-file %h/.config/agent-proxy/run-token.env \
           -p 127.0.0.1:8790:8790 \
           -v %h/agent-workspace:/workspaces \
+          -v %h/agent-state:/state \
           -v %h/agent-runner/chat-entry.sh:/entry.sh:ro \
           -v %h/agent-runner/opencode.json:/home/agent/.config/opencode/opencode.json:ro \
           agent-runner
