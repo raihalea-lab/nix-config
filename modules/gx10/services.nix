@@ -286,7 +286,7 @@ in
     Service = {
       ExecStartPre = [
         "-/usr/bin/docker rm -f agent-chat"
-        "/usr/bin/mkdir -p %h/agent-workspace"
+        "/usr/bin/mkdir -p %h/agent-workspace %h/agent-state"
       ];
       # ⚠️ 資格情報は渡さない。GitHub トークンも vLLM の実キーも入れない
       #    （LLM は proxy 経由、PR 化は機械層経由）。
@@ -298,6 +298,7 @@ in
           --env-file %h/.config/agent-proxy/run-token.env \
           -p 127.0.0.1:8790:8790 \
           -v %h/agent-workspace:/workspaces \
+          -v %h/agent-state:/state \
           -v %h/agent-runner/chat-entry.sh:/entry.sh:ro \
           -v %h/agent-runner/opencode.json:/home/agent/.config/opencode/opencode.json:ro \
           agent-runner
@@ -309,6 +310,73 @@ in
     };
     Install = {
       WantedBy = [ "default.target" ];
+    };
+  };
+
+  # 軽量な自動実装の経路。Linear の `hermes-go` を巡回して PR まで作る。
+  # 対話でがっつり書きたいときは code.raiha.dev（agent-chat）を使う。
+  systemd.user.services.agent-implement = {
+    Unit = {
+      Description = "Implement Linear tickets labelled hermes-go";
+      ConditionPathExists = "%h/.config/linear/api-key";
+      After = [ "network-online.target" ];
+    };
+    Service = {
+      Type = "oneshot";
+      ExecStart = "%h/bin/agent-implement.py";
+      Environment = "GH_BIN=%h/.nix-profile/bin/gh";
+      # エージェントループは1件で最大45分。次の発火までに終わらせる
+      TimeoutStartSec = "3300";
+    };
+  };
+
+  # ⚠️ **「GitHub App の権限管理だけで全ての環境が揃う」を成立させているのがこれ。**
+  # App のインストール範囲と ~/agent-workspace を突き合わせ、増えたリポジトリの
+  # 作業ツリーを作って code.raiha.dev の一覧に出す。外れたものは退避する。
+  # 人が用意する手順は無い（App の設定画面が唯一の管理点）。
+  systemd.user.services.agent-sync-workspaces = {
+    Unit = {
+      Description = "Sync chat workspaces with the GitHub App installation";
+      ConditionPathExists = "%h/agent-runner/chat-entry.sh";
+      After = [ "network-online.target" ];
+    };
+    Service = {
+      Type = "oneshot";
+      ExecStart = "%h/bin/agent-implement.py --sync-workspaces";
+      Environment = "GH_BIN=%h/.nix-profile/bin/gh";
+      TimeoutStartSec = "1800";
+    };
+  };
+
+  systemd.user.timers.agent-implement = {
+    Unit = {
+      Description = "Poll Linear for implementation work";
+      ConditionPathExists = "%h/.config/linear/api-key";
+    };
+    Timer = {
+      OnBootSec = "10min";
+      OnUnitInactiveSec = "15min";
+      Persistent = true;
+    };
+    Install = {
+      WantedBy = [ "timers.target" ];
+    };
+  };
+
+  systemd.user.timers.agent-sync-workspaces = {
+    Unit = {
+      Description = "Hourly workspace sync";
+      ConditionPathExists = "%h/agent-runner/chat-entry.sh";
+    };
+    Timer = {
+      # 起動直後にも1回走らせる（リブートを跨いで App の変更を取り込むため）
+      OnBootSec = "5min";
+      OnUnitInactiveSec = "1h";
+      Persistent = true;
+      RandomizedDelaySec = 300;
+    };
+    Install = {
+      WantedBy = [ "timers.target" ];
     };
   };
 
