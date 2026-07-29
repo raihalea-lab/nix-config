@@ -5,6 +5,7 @@
     # WSL専用パッケージをここに追加
     unzip
     jq
+    wget
     chromium
 
     # --- CUDA アプリ (llama.cpp 等) のビルド用ツールチェーン ---
