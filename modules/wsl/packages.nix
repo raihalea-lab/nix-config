@@ -17,6 +17,7 @@
     ccache
     pkg-config
     curl.dev # libcurl のヘッダ (apt の libcurl4-openssl-dev 相当)
+    opencode
   ];
 
   # curl.dev などが置く .pc ファイルを pkg-config / CMake から見つけられるようにする
