@@ -17,13 +17,46 @@ let
       WantedBy = [ "default.target" ];
     };
   };
+
+  # 2026-07-30 から本番は DeepSeek-V4（2台 TP=2）。旧3モデルは**両機のメモリを
+  # 明け渡さないと DeepSeek が載らない**ので自動起動しない。
+  # 戻したいときは各機で `touch ~/.config/vllm/legacy-models` して再起動する
+  # （ConditionPathExists は AND なので、スクリプトとマーカーの両方が要る）。
+  mkLegacyVllmService = desc: script: (mkVllmService desc script) // {
+    Unit = {
+      Description = desc;
+      ConditionPathExists = [ script "%h/.config/vllm/legacy-models" ];
+      After = [ "network-online.target" ];
+    };
+  };
 in
 {
   systemd.user.services = {
-    qwen-vllm = mkVllmService "vLLM Qwen3.6-35B (Hermes default model, port 8080)" "%h/bin/qwen-serve.sh";
-    laguna-vllm = mkVllmService "vLLM Laguna S 2.1 (port 8000)" "%h/bin/laguna-serve.sh";
+    # ⚠️ 本番モデル。**両機で同じユニットが動き、rank は自分の QSFP IP から判定する**
+    #    （192.168.100.1 = head / .2 = worker）。head から worker を SSH で起こさない
+    #    設計なので、順序は問わない（先に上がった側が待ち合わせる）。
+    #    起動に約8分（重み 166.9GB のロード + CUDA graph）。
+    #    詳細は dgx-control の docs/deepseek-v4-dual.md。
+    deepseek-vllm = {
+      Unit = {
+        Description = "vLLM DeepSeek-V4-Flash 2-node TP=2 (port 8888)";
+        ConditionPathExists = "%h/bin/deepseek-serve.sh";
+        After = [ "network-online.target" ];
+      };
+      Service = {
+        ExecStart = "%h/bin/deepseek-serve.sh";
+        # ⚠️ always にする。docker や RoCE がまだ整っていない段階では起動前検査が
+        #    exit 64 で止まるので、条件が整うまで再試行させる。
+        Restart = "always";
+        RestartSec = 30;
+      };
+      Install.WantedBy = [ "default.target" ];
+    };
+
+    qwen-vllm = mkLegacyVllmService "vLLM Qwen3.6-35B (port 8080, legacy)" "%h/bin/qwen-serve.sh";
+    laguna-vllm = mkLegacyVllmService "vLLM Laguna S 2.1 (port 8000, legacy)" "%h/bin/laguna-serve.sh";
     # llama.cpp だが起動の形は vLLM 勢と同一（スクリプト存在で機体判別、Restart 付き）
-    fable-llama = mkVllmService "llama.cpp Fable-Fusion 27B creative (port 8081)" "%h/bin/fable-serve.sh";
+    fable-llama = mkLegacyVllmService "llama.cpp Fable-Fusion 27B creative (port 8081, legacy)" "%h/bin/fable-serve.sh";
 
     # PR レビューパイプライン（機械層）のフォールバック巡回。
     # 主経路は GitHub webhook → gh-gatekeeper.py が当該 PR だけを即時発火する。
