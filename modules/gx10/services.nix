@@ -53,6 +53,21 @@ in
       Install.WantedBy = [ "default.target" ];
     };
 
+    # ⚠️ **API の応答で死活を判定する。** 2026-07-30、NCCL の collective timeout で
+    #    engine が死んだのにコンテナは Up のまま残り、`Restart=always` が発火せず
+    #    `is-active` も active を返し続けた（7時間気づけなかった）。
+    #    プロセスの生死では検出できないので、外から API を叩いて判定する。
+    deepseek-healthcheck = {
+      Unit = {
+        Description = "DeepSeek API health check (restarts a wedged engine)";
+        ConditionPathExists = "%h/bin/deepseek-healthcheck.sh";
+      };
+      Service = {
+        Type = "oneshot";
+        ExecStart = "%h/bin/deepseek-healthcheck.sh";
+      };
+    };
+
     qwen-vllm = mkLegacyVllmService "vLLM Qwen3.6-35B (port 8080, legacy)" "%h/bin/qwen-serve.sh";
     laguna-vllm = mkLegacyVllmService "vLLM Laguna S 2.1 (port 8000, legacy)" "%h/bin/laguna-serve.sh";
     # llama.cpp だが起動の形は vLLM 勢と同一（スクリプト存在で機体判別、Restart 付き）
@@ -378,6 +393,23 @@ in
       ExecStart = "%h/bin/agent-implement.py --sync-workspaces";
       Environment = "GH_BIN=%h/.nix-profile/bin/gh";
       TimeoutStartSec = "1800";
+    };
+  };
+
+  # ⚠️ 3分ごと。連続4回失敗（=12分）で初めて再起動する。起動に10分前後かかるので、
+  #    1回の失敗で再起動すると起動し直しのループに入る（スクリプト側にも猶予あり）。
+  systemd.user.timers.deepseek-healthcheck = {
+    Unit = {
+      Description = "Check DeepSeek API health";
+      ConditionPathExists = "%h/bin/deepseek-healthcheck.sh";
+    };
+    Timer = {
+      OnBootSec = "15min";
+      OnUnitInactiveSec = "3min";
+      Persistent = false;
+    };
+    Install = {
+      WantedBy = [ "timers.target" ];
     };
   };
 
