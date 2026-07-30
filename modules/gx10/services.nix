@@ -240,9 +240,13 @@ in
       port: 8091
 
     endpoints:
-      - name: vLLM Laguna S 2.1
-        group: gx10-2
-        url: "http://localhost:8000/v1/models"
+      # ⚠️ **本番モデル。API の応答で見ること。** 2026-07-30、NCCL の collective
+      #    timeout で engine が死んだのにコンテナは Up のままで、プロセス監視では
+      #    7時間気づけなかった。401 が返る = 認証まで到達している = 生きている。
+      #    ⚠️ 起動に10分前後かかるので、再起動直後の赤は正常。
+      - name: DeepSeek-V4 (2台 TP=2)
+        group: gx10-1
+        url: "http://192.168.100.1:8888/v1/models"
         interval: 60s
         conditions:
           - "[STATUS] == 401"
@@ -254,24 +258,13 @@ in
         conditions:
           - "[STATUS] == 200"
 
-      - name: vLLM Qwen3.6
-        group: gx10-1
-        url: "http://100.91.149.123:8080/v1/models"
-        interval: 60s
-        conditions:
-          - "[STATUS] == 401"
-
-      # llama.cpp の /health は API キー免除の公開エンドポイント
-      - name: Fable-Fusion (llama.cpp)
-        group: gx10-1
-        url: "http://100.91.149.123:8081/health"
-        interval: 60s
-        conditions:
-          - "[STATUS] == 200"
+      # ⚠️ Qwen / Fable / Laguna は 2026-07-30 から**自動起動しない**（DeepSeek が
+      #    両機のメモリを占有するため）。監視を残すと常時赤になるので外した。
+      #    `~/.config/vllm/legacy-models` を作って戻したときは、ここも戻すこと。
 
       - name: voice-bridge
         group: gx10-1
-        url: "http://100.91.149.123:18000"
+        url: "http://192.168.100.1:18000"
         interval: 60s
         conditions:
           - "[CONNECTED] == true"
