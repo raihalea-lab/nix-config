@@ -17,10 +17,10 @@
 
     brews = [
       "k1Low/tap/mo"
-      "docker/tap/sbx"
     ];
 
     casks = [
+      "docker/tap/sbx"
       "ghostty"
       "linear"
       "zoom"
