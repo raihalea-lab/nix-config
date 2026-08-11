@@ -11,12 +11,12 @@
     };
 
     taps = [
-      "k1Low/tap",
+      "k1Low/tap"
       "docker/tap"
     ];
 
     brews = [
-      "k1Low/tap/mo",
+      "k1Low/tap/mo"
       "docker/tap/sbx"
     ];
 
