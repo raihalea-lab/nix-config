@@ -58,7 +58,7 @@ hm-clean  # runs nix-collect-garbage -d
 
 ## Key Patterns
 
-- OS detection uses `pkgs.stdenv.isDarwin`
+- OS detection uses `pkgs.stdenv.hostPlatform.isDarwin`
 - Platform-specific code goes in `modules/darwin/` or `modules/wsl/`
 - `shellAliases` are merged from common and platform-specific modules
 - flake.nix imports different module combinations per platform

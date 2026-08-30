@@ -1,7 +1,7 @@
 { pkgs, ... }:
 
 let
-  isDarwin = pkgs.stdenv.isDarwin;
+  isDarwin = pkgs.stdenv.hostPlatform.isDarwin;
   username = "raiha";
   homePrefix = if isDarwin then "/Users" else "/home";
 in

@@ -26,7 +26,7 @@
       "zoom"
       "blackhole-2ch"
       "cmux"
-      "tailscale"
+      "tailscale-app"
       "windows-app"
       "antigravity-cli"
     ];
