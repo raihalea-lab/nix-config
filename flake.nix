@@ -12,8 +12,11 @@
     darwin.inputs.nixpkgs.follows = "nixpkgs";
 
     # herdr (AIエージェント用tmux)
-    # nixpkgs.follows は付けない: 上流のCachixバイナリキャッシュを使うため
+    # 上流はバイナリキャッシュを公開していないので毎回ソースビルドになる。
+    # follows を付けないと herdr 側の古い nixpkgs が使われ、その世代の
+    # importCargoLock が crates.io の API から取得して 403 で失敗する。
     herdr.url = "github:ogulcancelik/herdr";
+    herdr.inputs.nixpkgs.follows = "nixpkgs";
   };
 
   outputs = inputs@{ self, nixpkgs, home-manager, darwin, ... }: {
