@@ -8,6 +8,11 @@
     wget
     chromium
 
+    # Docker Sandboxes (sbx): AI エージェントを microVM に隔離して実行する CLI
+    # WSL2 のネストされた仮想化 (/dev/kvm) を利用するため、kvm グループへの参加が別途必要
+    #   sudo usermod -aG kvm $USER
+    docker-sbx
+
     # --- CUDA アプリ (llama.cpp 等) のビルド用ツールチェーン ---
     # nvcc 本体 (cuda-toolkit-13-0) だけは apt で入れる。
     # WSL の GPU は Windows 側ドライバを /usr/lib/wsl/lib 経由で使う都合上、
