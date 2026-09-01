@@ -19,14 +19,30 @@
     herdr.inputs.nixpkgs.follows = "nixpkgs";
   };
 
-  outputs = inputs@{ self, nixpkgs, home-manager, darwin, ... }: {
+  outputs = inputs@{ self, nixpkgs, home-manager, darwin, ... }:
+    let
+      # Nix で許可する unfree パッケージのリスト。
+      # docker-sbx は Docker 独自ライセンス（unfree）のため、明示的に許可しないと
+      # 「Refusing to evaluate package ... unfree license」で評価が失敗する。
+      allowedUnfree = [
+        "docker-sbx"  # Docker Sandboxes (sbx)
+      ];
+
+      # config 付きの nixpkgs を作るヘルパー。
+      # legacyPackages.<system> は config が空なので unfree を許可できない。
+      mkPkgs = system: import nixpkgs {
+        inherit system;
+        config.allowUnfreePredicate = pkg: builtins.elem (nixpkgs.lib.getName pkg) allowedUnfree;
+      };
+    in
+    {
 
     # ---------------------------------------------------------------
     # 1. WSL用設定 (Home Manager Standalone)
     # コマンド: home-manager switch --flake .#wsl
     # ---------------------------------------------------------------
     homeConfigurations."wsl" = home-manager.lib.homeManagerConfiguration {
-      pkgs = nixpkgs.legacyPackages."x86_64-linux";
+      pkgs = mkPkgs "x86_64-linux";
       modules = [
         ./home.nix
         ./modules/common
@@ -44,7 +60,7 @@
     # ./modules/linux を新設し、共有分をそちらへ移すこと。
     # ---------------------------------------------------------------
     homeConfigurations."gx10" = home-manager.lib.homeManagerConfiguration {
-      pkgs = nixpkgs.legacyPackages."aarch64-linux";
+      pkgs = mkPkgs "aarch64-linux";
       modules = [
         ./home.nix
         ./modules/common
