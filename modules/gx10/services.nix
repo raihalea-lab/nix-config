@@ -68,6 +68,26 @@ in
       };
     };
 
+    # Vision-Exp（Docker Compose）用の死活監視。2026-09-04 に本番を 0731 から
+    # 移行した際、`deepseek-healthcheck` 相当が空いたので埋めた。
+    # ⚠️ compose の `restart: unless-stopped` はプロセス死しか拾わない。
+    #    engine が刺さってもコンテナは Up のままなので、外から生成させて判定する。
+    # ⚠️ head（gx10-1）だけで動く。TP=2 はどちらのランクが落ちても生成できなくなるし、
+    #    復旧も上流 launcher が SSH で両ランクを面倒みるため。機体判別は
+    #    ConditionPathExists（スクリプトは gx10-1 にしか置かない）。
+    vision-exp-healthcheck = {
+      Unit = {
+        Description = "Vision-Exp generation health check (restarts both ranks)";
+        ConditionPathExists = "%h/bin/vision-exp-healthcheck.sh";
+      };
+      Service = {
+        Type = "oneshot";
+        ExecStart = "%h/bin/vision-exp-healthcheck.sh";
+        # 再起動は stop→start で10分前後かかる。oneshot が途中で殺されないように
+        TimeoutStartSec = "30min";
+      };
+    };
+
     qwen-vllm = mkLegacyVllmService "vLLM Qwen3.6-35B (port 8080, legacy)" "%h/bin/qwen-serve.sh";
     laguna-vllm = mkLegacyVllmService "vLLM Laguna S 2.1 (port 8000, legacy)" "%h/bin/laguna-serve.sh";
     # llama.cpp だが起動の形は vLLM 勢と同一（スクリプト存在で機体判別、Restart 付き）
@@ -391,6 +411,24 @@ in
 
   # ⚠️ 3分ごと。連続4回失敗（=12分）で初めて再起動する。起動に10分前後かかるので、
   #    1回の失敗で再起動すると起動し直しのループに入る（スクリプト側にも猶予あり）。
+  # Vision-Exp 用。間隔は deepseek-healthcheck と同じ3分
+  # （スクリプト側が連続4回=12分で初めて再起動する）。
+  systemd.user.timers.vision-exp-healthcheck = {
+    Unit = {
+      Description = "Check Vision-Exp generation health";
+      ConditionPathExists = "%h/bin/vision-exp-healthcheck.sh";
+    };
+    Timer = {
+      # 起動に6〜10分かかるので、ブート直後は見に行かない
+      OnBootSec = "15min";
+      OnUnitInactiveSec = "3min";
+      Persistent = false;
+    };
+    Install = {
+      WantedBy = [ "timers.target" ];
+    };
+  };
+
   systemd.user.timers.deepseek-healthcheck = {
     Unit = {
       Description = "Check DeepSeek API health";
