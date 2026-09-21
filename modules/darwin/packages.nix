@@ -8,5 +8,6 @@
     ncdu
     sox
     coreutils  # timeout など GNU コマンド（プレフィックスなしで入る）
+    opencode
   ];
 }
