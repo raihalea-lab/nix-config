@@ -17,6 +17,7 @@
 
     brews = [
       "k1Low/tap/mo"
+      "anomalyco/tap/opencode-v2"
     ];
 
     casks = [
